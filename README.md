@@ -23,13 +23,6 @@ Macan File Vault is a standalone desktop application that lets you encrypt, stor
 
 <img width="1024" height="1536" alt="macan-file-vault-v1 4 0" src="https://github.com/user-attachments/assets/7fc8da13-9c6f-4920-8882-df4d46b5e008" />
 
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/danx123/macan-vault/main/screenshots/locked.png" alt="Locked Screen" width="520"/>
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/danx123/macan-vault/main/screenshots/unlocked.png" alt="Unlocked Screen" width="520"/>
-</div>
-
 ---
 
 ## Features

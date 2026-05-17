@@ -6,7 +6,7 @@
 
 **A lightweight, self-contained desktop vault for encrypting and managing sensitive files.**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue?style=flat-square)](https://github.com/danx123/macan-vault/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue?style=flat-square)](https://github.com/danx123/macan-vault/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
@@ -20,6 +20,9 @@ AES-256-GCM · PBKDF2-HMAC-SHA256 · Zero plaintext on disk
 ## Overview
 
 Macan File Vault is a standalone desktop application that lets you encrypt, store, and decrypt files inside a local vault — with no cloud dependency, no account required, and no plaintext ever written to disk. It ships as a single Python script and runs on any platform that supports PySide6.
+
+<img width="1024" height="1536" alt="macan-file-vault-v1 4 0" src="https://github.com/user-attachments/assets/7fc8da13-9c6f-4920-8882-df4d46b5e008" />
+
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/danx123/macan-vault/main/screenshots/locked.png" alt="Locked Screen" width="520"/>
@@ -41,7 +44,51 @@ Macan File Vault is a standalone desktop application that lets you encrypt, stor
 | **Brute-force lockout** | 3 failed unlock attempts triggers a 30-minute lockout |
 | **Exportable key file** | Back up your derived key as a `.mfk` file for vault recovery |
 | **Drag-and-drop** | Drop files directly onto the vault window to encrypt them instantly |
+| **Quick View sidebar** | Preview encrypted files in-place without decrypting to disk — images, video, audio, documents, code, and more |
 | **Cross-platform** | Runs on Windows, macOS, and Linux via PySide6 |
+
+---
+
+## Quick View
+
+Quick View is an in-application sidebar that lets you inspect the contents of any encrypted vault file instantly, without extracting it to disk. Press **F3** or click the Quick View button on any selected file to open it.
+
+All decryption happens exclusively in RAM. The moment you switch files or close the sidebar, the plaintext is discarded — nothing is ever written to the filesystem.
+
+### Supported Formats
+
+| Category | Extensions |
+|---|---|
+| **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tiff` `.svg` |
+| **Text / Config** | `.txt` `.md` `.log` `.ini` `.cfg` `.yaml` `.yml` `.toml` `.xml` `.html` `.csv` `.json` `.env` and more |
+| **Source Code** | `.py` `.js` `.ts` `.jsx` `.tsx` `.java` `.c` `.cpp` `.go` `.rs` `.rb` `.php` `.sh` `.sql` `.swift` `.kt` and more |
+| **Audio** | `.mp3` `.wav` `.ogg` `.flac` `.m4a` `.aac` `.wma` `.opus` `.aiff` |
+| **Video** | `.mp4` `.mkv` `.avi` `.mov` `.webm` `.wmv` `.flv` `.m4v` `.3gp` |
+| **PDF** | `.pdf` — first 3 pages rendered as plain text |
+| **Archives** | `.zip` — full file listing with names, sizes, and dates |
+| **Office** | `.docx` `.xlsx` `.pptx` — paragraph text, sheet rows, and slide content |
+| **Binary** | All other formats — hex dump of the first 1,024 bytes |
+
+### Audio & Video Playback
+
+Audio and video files play directly inside the sidebar via `QMediaPlayer` (PySide6 QtMultimedia). No external player is launched and no decrypted file is written to disk.
+
+The transport bar provides:
+
+- **Play / Pause** toggle
+- **Seek bar** with drag support
+- **Elapsed / total time** label (`m:ss / m:ss`)
+- **Volume** slider
+
+Audio viewers additionally display a waveform visualisation sampled from the raw byte stream, along with embedded metadata where available (ID3v1 tags for `.mp3`, RIFF header for `.wav`).
+
+### Source Code Highlighting
+
+Text and source code files are rendered in a monospaced editor with lightweight syntax highlighting — keywords, string literals, comments, and numeric literals — for Python, JavaScript/TypeScript, Java, Go, Rust, and SQL.
+
+### Non-blocking Architecture
+
+Decryption runs on a background `QThread` so the main UI remains fully responsive while large files are being processed. Switching to a different file cancels the in-flight job immediately.
 
 ---
 
@@ -50,6 +97,24 @@ Macan File Vault is a standalone desktop application that lets you encrypt, stor
 - Python **3.10** or later
 - [PySide6](https://pypi.org/project/PySide6/) — Qt for Python (UI framework)
 - [cryptography](https://pypi.org/project/cryptography/) — AES-GCM and PBKDF2 primitives
+
+### Optional Dependencies
+
+The following packages unlock additional Quick View capabilities. Each one degrades gracefully if absent — the relevant viewer falls back to a metadata display with installation instructions rather than raising an error.
+
+| Package | Enables |
+|---|---|
+| `PySide6-Addons` | Audio and video playback (`QtMultimedia`) |
+| `pypdf` | PDF text extraction |
+| `python-docx` | DOCX paragraph preview |
+| `openpyxl` | XLSX sheet preview |
+| `python-pptx` | PPTX slide text preview |
+
+Install all optional packages at once:
+
+```bash
+pip install PySide6-Addons pypdf python-docx openpyxl python-pptx
+```
 
 ---
 
@@ -75,7 +140,13 @@ pip install PySide6 cryptography
 > pip install PySide6 cryptography
 > ```
 
-**3. Run the application**
+**3. (Optional) Install Quick View extras**
+
+```bash
+pip install PySide6-Addons pypdf python-docx openpyxl python-pptx
+```
+
+**4. Run the application**
 
 ```bash
 python macan_vault_standalone.py
@@ -89,8 +160,9 @@ python macan_vault_standalone.py
 2. **Create a new vault** — click *Create New Vault* and set a strong master password. The vault index is encrypted immediately.
 3. **Unlock an existing vault** — click *Unlock Vault* and enter your password. After 3 wrong attempts, the vault locks out for 30 minutes.
 4. **Encrypt files** — click *Encrypt Files* in the toolbar, or drag and drop files onto the window. Files are encrypted in-place and the originals can be wiped.
-5. **Decrypt files** — select one or more entries from the list and click *Decrypt*. Choose a destination folder for the recovered files.
-6. **Lock** — click *Lock* or press **Ctrl+L** to clear the session key from memory and return to the locked state.
+5. **Preview files** — select any entry and press **F3** (or click *Quick View*) to inspect its contents without decrypting to disk.
+6. **Decrypt files** — select one or more entries from the list and click *Decrypt*. Choose a destination folder for the recovered files.
+7. **Lock** — click *Lock* or press **Ctrl+L** to clear the session key from memory and return to the locked state.
 
 ---
 
@@ -102,6 +174,7 @@ python macan_vault_standalone.py
 | Decrypt selected | `Ctrl+D` |
 | Lock vault | `Ctrl+L` |
 | New vault | `Ctrl+N` |
+| Quick View | `F3` |
 
 ---
 
@@ -128,6 +201,7 @@ Key files (`.mfk`) store a versioned, encrypted copy of the derived key for back
 - The master password is **never stored** anywhere. Only the derived key (in memory, for the duration of the session) and the encrypted index are persisted.
 - Each file is encrypted with a **unique salt and nonce**, ensuring ciphertext diversity even for identical inputs.
 - GCM authentication tags are verified before any plaintext is returned — a tampered or corrupted file will be rejected outright.
+- **Quick View** decrypts exclusively in RAM. No plaintext is ever written to disk; content is discarded the moment the viewer is closed or switched.
 - The brute-force lockout is enforced in-process. For server or shared-machine deployments, consider additional OS-level access controls.
 
 ---
@@ -137,11 +211,13 @@ Key files (`.mfk`) store a versioned, encrypted copy of the derived key for back
 ```
 macan-vault/
 ├── macan_vault_standalone.py   # Single-file application entry point
+├── quick_view_module.py        # Quick View sidebar (format preview engine)
 ├── macan_shield.png            # Application logo (used in UI)
 ├── macan_shield.ico            # Window icon (Windows)
 ├── screenshots/
 │   ├── locked.png
 │   └── unlocked.png
+├── CHANGELOG.md
 └── README.md
 ```
 

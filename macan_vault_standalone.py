@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QFileDialog, QListWidget,
     QListWidgetItem, QFrame, QDialog, QMessageBox, QProgressBar,
     QMenu, QInputDialog, QAbstractItemView, QSizePolicy, QStackedWidget,
+    QTreeWidget, QTreeWidgetItem, QHeaderView,
     QStatusBar, QToolBar, QSplitter, QScrollArea, QGraphicsDropShadowEffect,
 )
 from PySide6.QtCore import (
@@ -33,6 +34,13 @@ from PySide6.QtGui import (
     QIcon, QFont, QColor, QPalette, QPixmap, QAction, QKeySequence,
     QDragEnterEvent, QDropEvent, QFontDatabase, QPainter, QLinearGradient, 
 )
+
+try:
+    from quick_view_module import QuickViewSidebar
+    QUICK_VIEW_AVAILABLE = True
+except ImportError:
+    QUICK_VIEW_AVAILABLE = False
+    QuickViewSidebar = None
 
 try:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -63,7 +71,7 @@ MAX_ATTEMPTS      = 3
 LOCKOUT_SECONDS   = 1800
 
 APP_NAME          = "Macan File Vault"
-APP_VERSION       = "1.2.0"
+APP_VERSION       = "1.4.0"
 SETTINGS_ORG      = "MacanAngkasa"
 SETTINGS_APP      = "MacanVault"
 
@@ -176,26 +184,49 @@ QLineEdit::placeholder {{
     color: {CLR_TEXT_MUTED};
 }}
 
-/* ── List ── */
-QListWidget {{
+/* ── Tree / File Table ── */
+QTreeWidget {{
     background: {CLR_BG_SURFACE};
     border: 1px solid {CLR_BORDER};
     border-radius: 8px;
     color: {CLR_TEXT_PRIMARY};
     outline: none;
     font-size: 9.5pt;
+    show-decoration-selected: 1;
 }}
-QListWidget::item {{
-    padding: 10px 14px;
+QTreeWidget::item {{
+    padding: 8px 4px;
     border-bottom: 1px solid {CLR_BG_RAISED};
 }}
-QListWidget::item:hover {{
+QTreeWidget::item:hover {{
     background: {CLR_BG_HOVER};
 }}
-QListWidget::item:selected {{
+QTreeWidget::item:selected {{
     background: {CLR_ACCENT_DEEP};
     color: white;
     border-left: 3px solid {CLR_ACCENT};
+}}
+QHeaderView::section {{
+    background: {CLR_BG_RAISED};
+    color: {CLR_TEXT_MUTED};
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 6px 14px;
+    border: none;
+    border-right: 1px solid {CLR_BORDER};
+    border-bottom: 1px solid {CLR_BORDER};
+}}
+QHeaderView::section:hover {{
+    background: {CLR_BG_HOVER};
+    color: {CLR_TEXT_PRIMARY};
+}}
+QHeaderView::section:first {{
+    border-top-left-radius: 6px;
+}}
+QHeaderView::section:last {{
+    border-top-right-radius: 6px;
+    border-right: none;
 }}
 
 /* ── Scrollbar ── */
@@ -999,6 +1030,42 @@ class UnlockedPage(QWidget):
         self.btn_delete.setToolTip("Securely remove selected files from vault (Del)")
         self.btn_delete.clicked.connect(self._delete_selected)
 
+        # ── Quick View button ──────────────────────────────────────────────
+        sep_qv = QFrame()
+        sep_qv.setFrameShape(QFrame.Shape.VLine)
+        sep_qv.setStyleSheet(f"background: {CLR_BORDER}; max-width: 1px;")
+        sep_qv.setFixedHeight(24)
+
+        self.btn_quick_view = QPushButton("  👁  Quick View")
+        self.btn_quick_view.setFixedHeight(34)
+        self.btn_quick_view.setCheckable(True)
+        self.btn_quick_view.setToolTip("Preview selected file without decrypting to disk (F3)")
+        self.btn_quick_view.setStyleSheet(f"""
+            QPushButton {{
+                background: #1a2035;
+                color: {CLR_ACCENT_GLOW};
+                border: 1px solid {CLR_ACCENT_DEEP};
+                border-radius: 6px;
+                padding: 7px 14px;
+                font-size: 9.5pt;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background: #1f2d4a;
+                border-color: {CLR_ACCENT};
+            }}
+            QPushButton:checked {{
+                background: {CLR_ACCENT_DEEP};
+                border-color: {CLR_ACCENT};
+                color: white;
+            }}
+            QPushButton:pressed {{
+                background: {CLR_BG_BASE};
+            }}
+        """)
+        self.btn_quick_view.clicked.connect(self._toggle_quick_view)
+        # ── /Quick View button ─────────────────────────────────────────────
+
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setStyleSheet(f"background: {CLR_BORDER}; max-width: 1px;")
@@ -1026,6 +1093,8 @@ class UnlockedPage(QWidget):
         tb.addWidget(self.btn_encrypt)
         tb.addWidget(self.btn_decrypt)
         tb.addWidget(self.btn_delete)
+        tb.addWidget(sep_qv)
+        tb.addWidget(self.btn_quick_view)
         tb.addWidget(sep)
         tb.addStretch()
         tb.addWidget(self.btn_export_key)
@@ -1048,6 +1117,18 @@ class UnlockedPage(QWidget):
         pf_lay.addWidget(self.progress_label)
         self.progress_frame.setVisible(False)
         root.addWidget(self.progress_frame)
+
+        # ── Main content: splitter (file list | quick view sidebar) ────────
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setHandleWidth(4)
+        self._splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {CLR_BORDER};
+            }}
+            QSplitter::handle:hover {{
+                background: {CLR_BORDER_FOCUS};
+            }}
+        """)
 
         # ── File list area ──────────────────────────────────────────────────
         list_area = QWidget()
@@ -1077,27 +1158,52 @@ class UnlockedPage(QWidget):
             padding: 40px;
         """)
 
-        self.file_list = QListWidget()
+        self.file_list = QTreeWidget()
         self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self._context_menu)
         self.file_list.setAlternatingRowColors(False)
+        self.file_list.setRootIsDecorated(False)
+        self.file_list.setSortingEnabled(True)
+        self.file_list.setUniformRowHeights(True)
+        self.file_list.setColumnCount(4)
+        self.file_list.setHeaderLabels(["Filename", "Type", "Size", "Date Added"])
+        hdr = self.file_list.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.resizeSection(1, 72)
+        hdr.resizeSection(2, 90)
+        hdr.setStretchLastSection(False)
+        hdr.setSectionsMovable(False)
 
-        # Column headers row
-        col_hdr = QFrame()
-        col_hdr.setStyleSheet(f"background: {CLR_BG_RAISED}; border: 1px solid {CLR_BORDER}; border-radius: 6px;")
-        col_hdr_lay = QHBoxLayout(col_hdr)
-        col_hdr_lay.setContentsMargins(14, 6, 14, 6)
-        col_hdr_lay.setSpacing(0)
-        for label, stretch in [("Filename", 3), ("Type", 1), ("Size", 1), ("Date Added", 2)]:
-            lbl = QLabel(label)
-            lbl.setStyleSheet(f"color: {CLR_TEXT_MUTED}; font-size: 8pt; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
-            col_hdr_lay.addWidget(lbl, stretch)
+        # Connect selection change → auto-update Quick View when sidebar is open
+        self.file_list.itemSelectionChanged.connect(self._on_selection_changed)
 
-        list_lay.addWidget(col_hdr)
         list_lay.addWidget(self.drop_hint)
         list_lay.addWidget(self.file_list)
-        root.addWidget(list_area, 1)
+
+        self._splitter.addWidget(list_area)
+
+        # ── Quick View sidebar ──────────────────────────────────────────────
+        if QUICK_VIEW_AVAILABLE:
+            self._quick_view = QuickViewSidebar()
+            self._quick_view.close_btn.clicked.connect(self._close_quick_view)
+            self._quick_view.setVisible(False)
+            self._splitter.addWidget(self._quick_view)
+            self._splitter.setSizes([700, 360])
+            self._splitter.setCollapsible(0, False)
+            self._splitter.setCollapsible(1, True)
+        else:
+            self._quick_view = None
+
+        root.addWidget(self._splitter, 1)
+
+        # ── F3 keyboard shortcut ────────────────────────────────────────────
+        from PySide6.QtGui import QKeySequence, QShortcut
+        f3_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F3), self)
+        f3_shortcut.activated.connect(self._toggle_quick_view)
 
         # ── Info / status strip ─────────────────────────────────────────────
         info_strip = QFrame()
@@ -1111,6 +1217,10 @@ class UnlockedPage(QWidget):
         self.vault_dir_lbl.setStyleSheet(f"color: {CLR_TEXT_MUTED}; font-size: 8pt; background: transparent; font-family: 'Consolas', monospace;")
         is_lay.addWidget(self.info_lbl)
         is_lay.addStretch()
+        # Quick View F3 hint
+        self._qv_hint_lbl = QLabel("F3 — Quick View")
+        self._qv_hint_lbl.setStyleSheet(f"color: {CLR_TEXT_MUTED}; font-size: 7.5pt; background: transparent; margin-right: 12px;")
+        is_lay.addWidget(self._qv_hint_lbl)
         is_lay.addWidget(self.vault_dir_lbl)
         root.addWidget(info_strip)
 
@@ -1153,7 +1263,7 @@ class UnlockedPage(QWidget):
         if not dest:
             return
         mfe_paths = [os.path.join(self.manager.vault_dir,
-                     item.data(Qt.ItemDataRole.UserRole)) for item in selected]
+                     item.data(0, Qt.ItemDataRole.UserRole)) for item in selected]
         self._run_worker(task="decrypt", files=mfe_paths, dest_dir=dest,
                          password=self._current_password)
 
@@ -1172,7 +1282,7 @@ class UnlockedPage(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         for item in selected:
-            enc_name = item.data(Qt.ItemDataRole.UserRole)
+            enc_name = item.data(0, Qt.ItemDataRole.UserRole)
             mfe_path = os.path.join(self.manager.vault_dir, enc_name)
             try:
                 if os.path.exists(mfe_path):
@@ -1208,15 +1318,83 @@ class UnlockedPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"Could not save key file:\n{e}")
 
+    # ── Quick View ───────────────────────────────────────────────────────────
+
+    def _toggle_quick_view(self):
+        """Toggle Quick View sidebar open/closed (F3 or button)."""
+        if not QUICK_VIEW_AVAILABLE or not self._quick_view:
+            return
+
+        sidebar_visible = self._quick_view.isVisible()
+
+        if sidebar_visible:
+            self._close_quick_view()
+        else:
+            self._open_quick_view()
+
+    def _open_quick_view(self):
+        """Show sidebar and preview currently selected file (if any)."""
+        if not QUICK_VIEW_AVAILABLE or not self._quick_view:
+            return
+        self._quick_view.setVisible(True)
+        self.btn_quick_view.setChecked(True)
+        # Restore splitter proportions
+        total = self._splitter.width()
+        self._splitter.setSizes([max(300, total - 360), 360])
+        # Auto-preview current selection
+        self._preview_selected()
+
+    def _close_quick_view(self):
+        """Hide the Quick View sidebar."""
+        if not self._quick_view:
+            return
+        self._quick_view.clear()
+        self._quick_view.setVisible(False)
+        self.btn_quick_view.setChecked(False)
+
+    def _preview_selected(self):
+        """Decrypt and preview the first selected file in the sidebar."""
+        if not QUICK_VIEW_AVAILABLE or not self._quick_view:
+            return
+        if not self._quick_view.isVisible():
+            return
+        selected = self.file_list.selectedItems()
+        if not selected:
+            self._quick_view.clear()
+            return
+        item     = selected[0]
+        enc_name = item.data(0, Qt.ItemDataRole.UserRole)
+        info     = self.manager.index.get(enc_name, {})
+        mfe_path = os.path.join(self.manager.vault_dir, enc_name)
+        self._quick_view.preview(
+            mfe_path=mfe_path,
+            original_name=info.get("original_name", enc_name),
+            original_ext=info.get("original_ext", ""),
+            password=self._current_password,
+            size=info.get("size", 0),
+            date_added=info.get("added", 0),
+        )
+
+    def _on_selection_changed(self):
+        """Called when the file list selection changes."""
+        self._preview_selected()
+
     def _context_menu(self, pos):
         item = self.file_list.itemAt(pos)
         if not item:
             return
         menu = QMenu(self)
+        act_preview = menu.addAction("👁  Quick View  (F3)")
+        menu.addSeparator()
         act_dec = menu.addAction("🔓  Decrypt selected")
         act_del = menu.addAction("🗑  Remove from vault")
-        act = menu.exec(self.file_list.mapToGlobal(pos))
-        if act == act_dec:
+        act = menu.exec(self.file_list.viewport().mapToGlobal(pos))
+        if act == act_preview:
+            if not self._quick_view or not self._quick_view.isVisible():
+                self._open_quick_view()
+            else:
+                self._preview_selected()
+        elif act == act_dec:
             self._decrypt_selected()
         elif act == act_del:
             self._delete_selected()
@@ -1279,16 +1457,14 @@ class UnlockedPage(QWidget):
             added    = info.get("added", 0)
             date_str = datetime.datetime.fromtimestamp(added).strftime("%Y-%m-%d  %H:%M") if added else "—"
             size_str = _human_size(size)
+            ext_str  = ext.lstrip(".").upper() or "—"
 
-            # Build a padded display line (tabular feel)
-            name_part = orig[:46] + "…" if len(orig) > 48 else orig
-            ext_part  = (ext.lstrip(".").upper() or "—")[:8]
-            display   = f"{name_part:<50}  {ext_part:<8}  {size_str:<10}  {date_str}"
-
-            item = QListWidgetItem(f"  🔒  {display}")
-            item.setData(Qt.ItemDataRole.UserRole, enc_name)
-            item.setToolTip(f"Encrypted name: {enc_name}\nOriginal: {orig}\nSize: {size_str}\nAdded: {date_str}")
-            self.file_list.addItem(item)
+            item = QTreeWidgetItem(["  🔒  " + orig, ext_str, size_str, date_str])
+            item.setData(0, Qt.ItemDataRole.UserRole, enc_name)
+            item.setToolTip(0, f"Encrypted name: {enc_name}\nOriginal: {orig}\nSize: {size_str}\nAdded: {date_str}")
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+            item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.file_list.addTopLevelItem(item)
 
         count = len(index)
         has_items = count > 0
@@ -1305,6 +1481,11 @@ class UnlockedPage(QWidget):
             self._thread.quit()
             self._thread.wait(3000)
         self._current_password = ""
+        # Also clean Quick View sidebar
+        if self._quick_view:
+            self._quick_view.clear()
+            self._quick_view.setVisible(False)
+            self.btn_quick_view.setChecked(False)
 
 
 # ─── Main Window ──────────────────────────────────────────────────────────────
@@ -1403,11 +1584,16 @@ class MainWindow(QMainWindow):
         act_dec.setShortcut(QKeySequence("Ctrl+D"))
         act_dec.triggered.connect(lambda: self.vault_page._decrypt_selected() if self.manager.is_unlocked else None)
 
+        act_qv = QAction("Quick View  (Preview)", self)
+        act_qv.setShortcut(QKeySequence(Qt.Key.Key_F3))
+        act_qv.triggered.connect(lambda: self.vault_page._toggle_quick_view() if self.manager.is_unlocked else None)
+
         act_key = QAction("Export Key File…", self)
         act_key.triggered.connect(lambda: self.vault_page._export_key() if self.manager.is_unlocked else None)
 
         vault_menu.addAction(act_enc)
         vault_menu.addAction(act_dec)
+        vault_menu.addAction(act_qv)
         vault_menu.addSeparator()
         vault_menu.addAction(act_key)
 

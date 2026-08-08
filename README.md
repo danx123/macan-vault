@@ -6,7 +6,7 @@
 
 **A lightweight, self-contained desktop vault for encrypting and managing sensitive files.**
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blue?style=flat-square)](https://github.com/danx123/macan-vault/releases)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue?style=flat-square)](https://github.com/danx123/macan-vault/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
@@ -21,7 +21,7 @@ AES-256-GCM · PBKDF2-HMAC-SHA256 · Zero plaintext on disk
 
 Macan File Vault is a standalone desktop application that lets you encrypt, store, and decrypt files inside a local vault — with no cloud dependency, no account required, and no plaintext ever written to disk. It ships as a single Python script and runs on any platform that supports PySide6.
 
-<img width="1024" height="1536" alt="macan-file-vault-v1 4 0" src="https://github.com/user-attachments/assets/7fc8da13-9c6f-4920-8882-df4d46b5e008" />
+<img width="1102" height="715" alt="Screenshot 2026-08-08 065438" src="https://github.com/user-attachments/assets/7a551424-199c-42e0-98c6-4b15da42058f" />
 
 
 
